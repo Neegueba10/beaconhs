@@ -1,17 +1,22 @@
-// GET /training/records/:id/certificate?format=cert|wallet
+// GET /training/records/:id/certificate?format=cert|wallet[&json=1]
 //
-// Resolves the training_certificate row for the given record (or creates one
-// implicitly: the worker job creates certificates on demand if the cert row
-// exists). Returns:
+// Resolves the training_certificate row for the given record, creating one
+// lazily if the record has never been issued a certificate (records entered
+// manually or migrated never pass through the LMS completion flow that
+// normally creates the row). Returns:
 //   - 307 redirect to a signed GET URL on the latest PDF (cert by default)
 //   - 202 if no PDF exists yet and a render job has been enqueued
 //
 // `format=wallet` redirects to the wallet card variant.
 // `format=cert` (default) redirects to the full-size certificate.
+// `json=1` returns { status: 'ready', url } / { status: 'pending' } instead
+// of redirecting, so client buttons can poll without fighting CORS on the
+// signed storage URL.
 
+import { randomBytes } from 'node:crypto'
 import { NextResponse, type NextRequest } from 'next/server'
 import { and, desc, eq, like } from 'drizzle-orm'
-import { attachments, trainingCertificates } from '@beaconhs/db/schema'
+import { attachments, trainingCertificates, trainingRecords } from '@beaconhs/db/schema'
 import { presignGet } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
 import { requestCertificatePdf } from '@/lib/pdf-actions'
@@ -25,6 +30,7 @@ export async function GET(
   const { id: recordId } = await params
   const format = (req.nextUrl.searchParams.get('format') ?? 'cert').toLowerCase()
   const wantWallet = format === 'wallet'
+  const wantJson = req.nextUrl.searchParams.get('json') === '1'
 
   const ctx = await requireRequestContext()
   if (!ctx.tenantId) {
@@ -32,13 +38,38 @@ export async function GET(
   }
 
   const result = await ctx.db(async (tx) => {
-    const [cert] = await tx
+    let [cert] = await tx
       .select()
       .from(trainingCertificates)
       .where(eq(trainingCertificates.recordId, recordId))
       .orderBy(desc(trainingCertificates.createdAt))
       .limit(1)
-    if (!cert) return { cert: null, latestAttachment: null }
+
+    // Lazy issuance: any live (non-revoked) record can produce a credential.
+    if (!cert) {
+      const [record] = await tx
+        .select({ id: trainingRecords.id, deletedAt: trainingRecords.deletedAt })
+        .from(trainingRecords)
+        .where(eq(trainingRecords.id, recordId))
+        .limit(1)
+      if (!record) return { error: 'Training record not found.', status: 404 } as const
+      if (record.deletedAt) {
+        return {
+          error: 'This record has been revoked; no certificate can be issued.',
+          status: 409,
+        } as const
+      }
+      const [created] = await tx
+        .insert(trainingCertificates)
+        .values({
+          tenantId: ctx.tenantId!,
+          recordId,
+          verifyToken: randomBytes(20).toString('hex'),
+        })
+        .returning()
+      cert = created
+    }
+    if (!cert) return { error: 'Failed to issue certificate.', status: 500 } as const
 
     // For the full certificate we trust trainingCertificates.pdfAttachmentId.
     // For the wallet card we look up the most recent wallet attachment
@@ -57,7 +88,7 @@ export async function GET(
         )
         .orderBy(desc(attachments.createdAt))
         .limit(1)
-      return { cert, latestAttachment: wallet?.att ?? null }
+      return { cert, latestAttachment: wallet?.att ?? null } as const
     }
 
     if (cert.pdfAttachmentId) {
@@ -66,20 +97,18 @@ export async function GET(
         .from(attachments)
         .where(eq(attachments.id, cert.pdfAttachmentId))
         .limit(1)
-      return { cert, latestAttachment: att ?? null }
+      return { cert, latestAttachment: att ?? null } as const
     }
-    return { cert, latestAttachment: null }
+    return { cert, latestAttachment: null } as const
   })
 
-  if (!result.cert) {
-    return NextResponse.json(
-      { error: 'No certificate has been issued for this record yet.' },
-      { status: 404 },
-    )
+  if ('error' in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
   }
 
   if (result.latestAttachment) {
     const url = await presignGet({ key: result.latestAttachment.r2Key, expiresInSeconds: 300 })
+    if (wantJson) return NextResponse.json({ status: 'ready', url })
     return NextResponse.redirect(url, { status: 307 })
   }
 
@@ -88,6 +117,7 @@ export async function GET(
   if (!enq.ok) {
     return NextResponse.json({ error: enq.error }, { status: 400 })
   }
+  if (wantJson) return NextResponse.json({ status: 'pending' }, { headers: { 'Retry-After': '5' } })
   return new NextResponse('Certificate is being generated. Refresh in a few seconds.', {
     status: 202,
     headers: {
