@@ -13,6 +13,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@beaconhs/design-studio": "workspace:*",
     "@beaconhs/forms-core": "workspace:*",
     "puppeteer-core": "^25.1.0"
   },
