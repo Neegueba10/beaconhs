@@ -3,7 +3,7 @@
 // Render a fresh incident PDF on demand and stream it back to the browser.
 
 import { requireRequestContext } from '@/lib/auth'
-import { renderOnDemandPdfResponse } from '@/lib/pdf-route'
+import { renderModulePdfResponse } from '@/lib/module-pdf'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,5 +17,9 @@ export async function GET(
     return Response.json({ error: 'No active tenant' }, { status: 400 })
   }
 
-  return renderOnDemandPdfResponse({ kind: 'incident', tenantId: ctx.tenantId, incidentId: id })
+  return renderModulePdfResponse(ctx, {
+    moduleKey: 'incidents',
+    recordId: id,
+    builtin: { kind: 'incident', tenantId: ctx.tenantId, incidentId: id },
+  })
 }
