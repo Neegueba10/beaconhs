@@ -99,7 +99,7 @@ export function SkillOverview({
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 px-4 py-4 text-sm sm:grid-cols-2">
         <ReadRow label="Person">
           <Link
-            href={`/training/transcripts/${person.id}`}
+            href={`/people/${person.id}?tab=skills`}
             className="font-medium text-teal-700 hover:underline dark:text-teal-300"
           >
             {person.firstName} {person.lastName}
