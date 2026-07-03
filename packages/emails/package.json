@@ -14,6 +14,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@beaconhs/crypto": "workspace:*",
     "nodemailer": "^9.0.1"
   },
   "devDependencies": {
