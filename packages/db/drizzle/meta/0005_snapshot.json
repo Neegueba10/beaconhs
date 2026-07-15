@@ -349,12 +349,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "locale_override": {
-          "name": "locale_override",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "tenant_user_status",
@@ -514,12 +508,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "tenant_users_locale_override_supported_check": {
-          "name": "tenant_users_locale_override_supported_check",
-          "value": "\"tenant_users\".\"locale_override\" is null or \"tenant_users\".\"locale_override\" in ('en', 'fr', 'es')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.tenants": {
@@ -643,16 +632,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "tenants_default_language_supported_check": {
-          "name": "tenants_default_language_supported_check",
-          "value": "\"tenants\".\"default_language\" in ('en', 'fr', 'es')"
-        },
-        "tenants_enabled_languages_valid_check": {
-          "name": "tenants_enabled_languages_valid_check",
-          "value": "jsonb_typeof(\"tenants\".\"enabled_languages\") = 'array'\n          and \"tenants\".\"enabled_languages\" <@ '[\"en\", \"fr\", \"es\"]'::jsonb\n          and \"tenants\".\"enabled_languages\" ? \"tenants\".\"default_language\""
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.user": {
@@ -696,6 +676,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'en'"
         },
         "timezone": {
           "name": "timezone",
